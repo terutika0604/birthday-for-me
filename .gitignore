@@ -69,3 +69,4 @@ node_modules/
 .dataconnect
 
 functions/config.json
+functions/.env.birthday-for-me
