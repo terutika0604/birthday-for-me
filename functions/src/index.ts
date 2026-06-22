@@ -3,6 +3,7 @@ import * as admin from "firebase-admin";
 import {https} from "firebase-functions";
 import {defineString} from "firebase-functions/params";
 import {onSchedule} from "firebase-functions/v2/scheduler";
+import {importFriendsFromSheet} from "./importFriendsFromSheet";
 import {syncPendingBirthdaysToGoogleCalendar} from "./syncCalendar";
 import {FriendDocument} from "./types";
 import {getTokyoDate} from "./utils";
@@ -12,6 +13,8 @@ const config = {
   channelSecret: defineString("CHANNEL_SECRET"),
   channelAccessToken: defineString("CHANNEL_ACCESS_TOKEN"),
   googleCalendarId: defineString("GOOGLE_CALENDAR_ID"),
+  googleSheetId: defineString("GOOGLE_SHEET_ID"),
+  googleSheetName: defineString("GOOGLE_SHEET_NAME"),
   // Firestore の接続情報を明示的に指定する場合は以下を使います。
   // たとえばローカル実行時に projectId を渡す場合:
   // firestoreProjectId: defineString("FIRESTORE_PROJECT_ID"),
@@ -131,11 +134,23 @@ export const birthdayBroadcast = onSchedule(
     timeZone: "Asia/Tokyo",
   },
   async () => {
-    await sendBirthdayBroadcast();
+    // 1. Google Form回答をシートから取り込む
+    await importFriendsFromSheet(
+      db,
+      {
+        spreadsheetId: config.googleSheetId.value(),
+        sheetName: config.googleSheetName.value(),
+      },
+    );
+
+    // 2. pending の友人を Google Calendar に同期
     await syncPendingBirthdaysToGoogleCalendar(
       db,
       config.googleCalendarId.value(),
     );
+
+    // 3. 誕生日通知を送る
+    await sendBirthdayBroadcast();
   },
 );
 
@@ -145,11 +160,23 @@ export const birthdayBroadcast = onSchedule(
  */
 export const testBirthdayBroadcast = https.onRequest(async (req, res) => {
   try {
-    const result = await sendBirthdayBroadcast();
+    // 1. Google Form回答をシートから取り込む
+    await importFriendsFromSheet(
+      db,
+      {
+        spreadsheetId: config.googleSheetId.value(),
+        sheetName: config.googleSheetName.value(),
+      },
+    );
+
+    // 2. pending の友人を Google Calendar に同期
     await syncPendingBirthdaysToGoogleCalendar(
       db,
       config.googleCalendarId.value(),
     );
+
+    // 3. 誕生日通知を送る
+    const result = await sendBirthdayBroadcast();
     res.json({
       success: true,
       todayCount: result.today,

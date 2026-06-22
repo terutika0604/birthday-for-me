@@ -39,6 +39,7 @@ const admin = __importStar(require("firebase-admin"));
 const firebase_functions_1 = require("firebase-functions");
 const params_1 = require("firebase-functions/params");
 const scheduler_1 = require("firebase-functions/v2/scheduler");
+const importFriendsFromSheet_1 = require("./importFriendsFromSheet");
 const syncCalendar_1 = require("./syncCalendar");
 const utils_1 = require("./utils");
 // 実行時に必要なパラメータを定義
@@ -46,6 +47,8 @@ const config = {
     channelSecret: (0, params_1.defineString)("CHANNEL_SECRET"),
     channelAccessToken: (0, params_1.defineString)("CHANNEL_ACCESS_TOKEN"),
     googleCalendarId: (0, params_1.defineString)("GOOGLE_CALENDAR_ID"),
+    googleSheetId: (0, params_1.defineString)("GOOGLE_SHEET_ID"),
+    googleSheetName: (0, params_1.defineString)("GOOGLE_SHEET_NAME"),
     // Firestore の接続情報を明示的に指定する場合は以下を使います。
     // たとえばローカル実行時に projectId を渡す場合:
     // firestoreProjectId: defineString("FIRESTORE_PROJECT_ID"),
@@ -132,8 +135,15 @@ exports.birthdayBroadcast = (0, scheduler_1.onSchedule)({
     schedule: "0 0 * * *",
     timeZone: "Asia/Tokyo",
 }, async () => {
-    await sendBirthdayBroadcast();
+    // 1. Google Form回答をシートから取り込む
+    await (0, importFriendsFromSheet_1.importFriendsFromSheet)(db, {
+        spreadsheetId: config.googleSheetId.value(),
+        sheetName: config.googleSheetName.value(),
+    });
+    // 2. pending の友人を Google Calendar に同期
     await (0, syncCalendar_1.syncPendingBirthdaysToGoogleCalendar)(db, config.googleCalendarId.value());
+    // 3. 誕生日通知を送る
+    await sendBirthdayBroadcast();
 });
 // テスト用：webhook で実行可能
 /**
@@ -141,8 +151,15 @@ exports.birthdayBroadcast = (0, scheduler_1.onSchedule)({
  */
 exports.testBirthdayBroadcast = firebase_functions_1.https.onRequest(async (req, res) => {
     try {
-        const result = await sendBirthdayBroadcast();
+        // 1. Google Form回答をシートから取り込む
+        await (0, importFriendsFromSheet_1.importFriendsFromSheet)(db, {
+            spreadsheetId: config.googleSheetId.value(),
+            sheetName: config.googleSheetName.value(),
+        });
+        // 2. pending の友人を Google Calendar に同期
         await (0, syncCalendar_1.syncPendingBirthdaysToGoogleCalendar)(db, config.googleCalendarId.value());
+        // 3. 誕生日通知を送る
+        const result = await sendBirthdayBroadcast();
         res.json({
             success: true,
             todayCount: result.today,
